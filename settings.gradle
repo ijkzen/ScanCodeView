@@ -1,0 +1,3 @@
+include ':ScanCode'
+include ':app'
+rootProject.name = "ScanCodeView"
