@@ -1,4 +1,4 @@
-package com.github.ijkzen.scancode
+package com.github.ijkzen.scancode.listener
 
 interface ScanResultListener {
 

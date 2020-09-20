@@ -4,15 +4,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
-import android.hardware.Camera
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.AttributeSet
+import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+import com.github.ijkzen.scancode.listener.CameraErrorListener
+import com.github.ijkzen.scancode.listener.ScanResultListener
 import com.github.ijkzen.scancode.util.isCameraAllowed
 import com.github.ijkzen.scancode.util.rotate90ForNv21
 import com.github.ijkzen.scancode.util.yuv888ToNv21
@@ -21,15 +23,25 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.multi.GenericMultipleBarcodeReader
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.lang.Exception
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 open class ScanCodeView : TextureView, ScanManager {
 
-    private val mCameraThread = HandlerThread("")
-    private var mCameraHandler: Handler? = null
+    companion object {
+        const val TAG = "ScanCodeView"
+        const val CAMERA_THREAD_TAG = "CameraThread"
+        const val IMAGE_READER_THREAD_TAG = "ImageReaderThread"
+    }
+
+    private val mCameraThread = HandlerThread(CAMERA_THREAD_TAG).apply { start() }
+    private val mCameraHandler = Handler(mCameraThread.looper)
+    private val mImageThread = HandlerThread(IMAGE_READER_THREAD_TAG).apply { start() }
+    private val mImageHandler = Handler(mImageThread.looper)
+
 
     private var mErrorListener: CameraErrorListener? = null
     private var mResultListener: ScanResultListener? = null
@@ -48,26 +60,14 @@ open class ScanCodeView : TextureView, ScanManager {
     @Volatile
     private var mContinue = true
 
-    private val mDeviceStateCallback = object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice) {
-            mCameraDevice = camera
-            initPreview()
-        }
-
-        override fun onDisconnected(camera: CameraDevice) {}
-
-        override fun onError(camera: CameraDevice, error: Int) {
-            mErrorListener?.cameraAccessFail()
-        }
-
-    }
-
     private val mImageListener = ImageReader.OnImageAvailableListener {
-        if (!mContinue || mResultListener == null) {
+        val image = it.acquireLatestImage()
+        if (!mContinue || mResultListener == null || image == null) {
+            mImageHandler.removeCallbacksAndMessages(null)
+            image?.close()
             return@OnImageAvailableListener
         }
 
-        val image = it.acquireLatestImage()
         val nv21 = yuv888ToNv21(image)
         val finalData = rotate90ForNv21(nv21, image.width, image.height)
         val source = PlanarYUVLuminanceSource(
@@ -95,41 +95,17 @@ open class ScanCodeView : TextureView, ScanManager {
 
         } catch (e: Exception) {
             e.printStackTrace()
+        } finally {
+            image.close()
         }
-    }
-
-    private val mSessionCallback = object:CameraCaptureSession.StateCallback(){
-        override fun onConfigured(session: CameraCaptureSession) {
-            mCameraSession = session
-            try {
-                mRequestBuilder?.let {
-                    mCameraSession!!.setRepeatingRequest(it.build(), null, mCameraHandler)
-                }
-            } catch (e: Exception) {
-                mErrorListener?.captureFail()
-                e.printStackTrace()
-            }
-        }
-
-        override fun onConfigureFailed(session: CameraCaptureSession) {
-            mErrorListener?.captureFail()
-        }
-
     }
 
     constructor(context: Context) : super(context) {
-        startCameraThread()
         initTextureView()
     }
 
     constructor(context: Context, attributeSet: AttributeSet) : super(context, attributeSet) {
-        startCameraThread()
         initTextureView()
-    }
-
-    private fun startCameraThread() {
-        mCameraThread.start()
-        mCameraHandler = Handler(mCameraThread.looper)
     }
 
     private fun initTextureView() {
@@ -163,16 +139,15 @@ open class ScanCodeView : TextureView, ScanManager {
         }
     }
 
-
     @SuppressLint("MissingPermission")
-    override fun initCamera() {
+    override fun initCamera() = runBlocking {
         if (isInitDone()) {
             releaseCamera()
         }
 
         if (!isCameraAllowed(context)) {
             mErrorListener?.noCameraPermission()
-            return
+            return@runBlocking
         }
 
         try {
@@ -180,7 +155,7 @@ open class ScanCodeView : TextureView, ScanManager {
             val cameraList = cameraManager.cameraIdList
             if (cameraList.isEmpty()) {
                 mErrorListener?.noCamera()
-                return
+                return@runBlocking
             }
 
             var targetCameraId = ""
@@ -195,7 +170,7 @@ open class ScanCodeView : TextureView, ScanManager {
 
             if ("" == targetCameraId && mCharacteristics == null) {
                 mErrorListener?.noBackCamera()
-                return
+                return@runBlocking
             }
 
             mIsFlashAvailable =
@@ -204,7 +179,11 @@ open class ScanCodeView : TextureView, ScanManager {
                 mErrorListener?.noFlashAvailable()
             }
 
-            cameraManager.openCamera(targetCameraId, mDeviceStateCallback, mCameraHandler)
+            mCameraDevice = openCamera(cameraManager, targetCameraId, mCameraHandler)
+            initPreview()
+            mCameraSession = createCaptureSession(mCameraDevice!!, getTargetList(), mCameraHandler)
+            initCaptureRequest()
+            mCameraSession!!.setRepeatingRequest(mRequestBuilder!!.build(), null, mCameraHandler)
 
         } catch (e: Exception) {
             mErrorListener?.cameraAccessFail()
@@ -212,10 +191,41 @@ open class ScanCodeView : TextureView, ScanManager {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private suspend fun openCamera(
+        manager: CameraManager,
+        cameraId: String,
+        handler: Handler
+    ): CameraDevice = suspendCancellableCoroutine { cont ->
+        manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+            override fun onOpened(camera: CameraDevice) {
+                cont.resume(camera)
+            }
+
+            override fun onDisconnected(camera: CameraDevice) {
+                Log.w(TAG, "Camera $cameraId has been disconnected")
+            }
+
+            override fun onError(camera: CameraDevice, error: Int) {
+                val msg = when (error) {
+                    ERROR_CAMERA_DEVICE -> "Fatal (device)"
+                    ERROR_CAMERA_DISABLED -> "Device policy"
+                    ERROR_CAMERA_IN_USE -> "Camera in use"
+                    ERROR_CAMERA_SERVICE -> "Fatal (service)"
+                    ERROR_MAX_CAMERAS_IN_USE -> "Maximum cameras in use"
+                    else -> "Unknown"
+                }
+                val exc = RuntimeException("Camera $cameraId error: ($error) $msg")
+                Log.e(TAG, exc.message, exc)
+                if (cont.isActive) cont.resumeWithException(exc)
+            }
+
+        }, handler)
+    }
+
     private fun initPreview() {
         mSize = getBestSize()
         initImageReader()
-        initCameraSession()
     }
 
     open fun getBestSize(): Size {
@@ -270,19 +280,26 @@ open class ScanCodeView : TextureView, ScanManager {
             mSize!!.width, mSize!!.height,
             ImageFormat.YUV_420_888, 3
         )
-        mImageReader!!.setOnImageAvailableListener(mImageListener, mCameraHandler)
+        mImageReader!!.setOnImageAvailableListener(mImageListener, mImageHandler)
     }
 
-    private fun initCameraSession() {
-        if (!isInitDone()) {
-            return
-        }
+    private suspend fun createCaptureSession(
+        device: CameraDevice,
+        targetList: List<Surface>,
+        handler: Handler
+    ): CameraCaptureSession = suspendCoroutine {
+        val callback = object : CameraCaptureSession.StateCallback() {
+            override fun onConfigured(session: CameraCaptureSession) {
+                it.resume(session)
+            }
 
-        try {
-
-        } catch (e: Exception) {
-            mErrorListener?.captureFail()
+            override fun onConfigureFailed(session: CameraCaptureSession) {
+                val exc = RuntimeException("Camera ${device.id} session configuration failed")
+                Log.e(TAG, exc.message, exc)
+                it.resumeWithException(exc)
+            }
         }
+        device.createCaptureSession(targetList, callback, handler)
     }
 
     private fun initCaptureRequest() {
@@ -290,16 +307,30 @@ open class ScanCodeView : TextureView, ScanManager {
         val textureSurface = Surface(surfaceTexture)
         mRequestBuilder!!.addTarget(textureSurface)
         mRequestBuilder!!.addTarget(mImageReader!!.surface)
+        mRequestBuilder!!.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+        mRequestBuilder!!.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
         mRequestBuilder!!.set(
             CaptureRequest.CONTROL_AF_MODE,
             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
         )
-        GlobalScope.launch {  }
-        runBlocking {  }
     }
 
+    private fun getTargetList() = arrayListOf(Surface(surfaceTexture), mImageReader!!.surface)
+
     override fun releaseCamera() {
-        TODO("Not yet implemented")
+        if (isInitDone()) {
+            mCameraSession!!.stopRepeating()
+            mCameraSession = null
+            mCameraDevice!!.close()
+            mCameraDevice = null
+            mCharacteristics = null
+            mSize = null
+        }
+    }
+
+    override fun destroyCamera() {
+        mCameraThread.quitSafely()
+        mImageThread.quitSafely()
     }
 
     override fun isFlashAvailable(): Boolean {
@@ -307,15 +338,21 @@ open class ScanCodeView : TextureView, ScanManager {
     }
 
     override fun openFlash() {
-        TODO("Not yet implemented")
+        if (isInitDone() && isFlashAvailable()) {
+            mRequestBuilder!!.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
+            mCameraSession!!.setRepeatingRequest(mRequestBuilder!!.build(), null, mCameraHandler)
+        }
     }
 
     override fun closeFlash() {
-        TODO("Not yet implemented")
+        if (isInitDone() && isFlashAvailable()) {
+            mRequestBuilder!!.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_OFF)
+            mCameraSession!!.setRepeatingRequest(mRequestBuilder!!.build(), null, mCameraHandler)
+        }
     }
 
     override fun isInitDone(): Boolean {
-        TODO("Not yet implemented")
+        return mCameraDevice != null && mCharacteristics != null && mSize != null && mCameraSession != null
     }
 
     override fun setContinue(continueScan: Boolean) {
@@ -323,12 +360,10 @@ open class ScanCodeView : TextureView, ScanManager {
     }
 
     override fun setResultListener(listener: ScanResultListener) {
-        TODO("Not yet implemented")
+        mResultListener = listener
     }
 
     override fun setCameraErrorListener(listener: CameraErrorListener) {
         mErrorListener = listener
     }
-
-
 }
