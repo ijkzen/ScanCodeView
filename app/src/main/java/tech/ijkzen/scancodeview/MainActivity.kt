@@ -2,8 +2,10 @@ package tech.ijkzen.scancodeview
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.view.View
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.content.ContextCompat
@@ -68,6 +70,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN
+            .or(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            .or(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
+            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        window.statusBarColor = Color.TRANSPARENT
         codeView.initCamera()
     }
 
