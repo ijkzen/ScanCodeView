@@ -1,4 +1,4 @@
-![bage](https://jitpack.io/v/ijkzen/ScanCodeView.svg) ![week_download](https://jitpack.io/v/ijkzen/ScanCodeView/week.svg) ![month_download](https://jitpack.io/v/ijkzen/ScanCodeView/month.svg)
+![bage](https://jitpack.io/v/ijkzen/ScanCodeView.svg) ![week_download](https://jitpack.io/v/ijkzen/ScanCodeView/week.svg) ![month_download](https://jitpack.io/v/ijkzen/ScanCodeView/month.svg) ![build status](https://github.com/ijkzen/ScanCodeView/workflows/ScanCodeView/badge.svg)
 ### Preview
 
 <img src='preview/preview.gif' height=800px/>
