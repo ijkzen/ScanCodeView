@@ -29,19 +29,19 @@
     <LinearLayout
         android:id="@+id/operation_layout"
         android:layout_width="0dp"
-        android:layout_height="80dp"
+        android:layout_height="0dp"
         android:background="@android:color/black"
-        android:gravity="center_horizontal"
+        android:gravity="center"
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/scan_code">
 
         <androidx.appcompat.widget.AppCompatImageView
             android:id="@+id/flash_img"
             android:layout_width="30dp"
             android:layout_height="30dp"
-            android:layout_marginTop="10dp"
             android:src="@drawable/flashlight" />
 
         <androidx.appcompat.widget.AppCompatTextView

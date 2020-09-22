@@ -2,8 +2,7 @@ package com.github.ijkzen.scancode
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
+import android.graphics.*
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
@@ -13,6 +12,7 @@ import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+import android.view.ViewGroup
 import com.github.ijkzen.scancode.listener.CameraErrorListener
 import com.github.ijkzen.scancode.listener.ScanResultListener
 import com.github.ijkzen.scancode.util.isCameraAllowed
@@ -47,9 +47,10 @@ open class ScanCodeView : TextureView, ScanManager {
     private var mResultListener: ScanResultListener? = null
 
     private var mIsFlashAvailable = false
+    private val mCameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var mCameraDevice: CameraDevice? = null
     private var mCharacteristics: CameraCharacteristics? = null
-    private var mSize: Size? = null
+    private var mPreviewSize: Size? = null
     private var mCameraSession: CameraCaptureSession? = null
     private var mRequestBuilder: CaptureRequest.Builder? = null
 
@@ -59,6 +60,8 @@ open class ScanCodeView : TextureView, ScanManager {
 
     @Volatile
     private var mContinue = true
+
+    private var mRemeasured = false
 
     private val mImageListener = ImageReader.OnImageAvailableListener {
         val image = it.acquireLatestImage()
@@ -116,7 +119,7 @@ open class ScanCodeView : TextureView, ScanManager {
                     width: Int,
                     height: Int
                 ) {
-                    initCamera()
+                    post { initCamera() }
                 }
 
                 override fun onSurfaceTextureSizeChanged(
@@ -136,6 +139,10 @@ open class ScanCodeView : TextureView, ScanManager {
             }
 
             surfaceTextureListener = listener
+        } else {
+            if (surfaceTexture != null) {
+                post { initCamera() }
+            }
         }
     }
 
@@ -145,42 +152,33 @@ open class ScanCodeView : TextureView, ScanManager {
             releaseCamera()
         }
 
+        if (surfaceTexture == null) {
+            return@runBlocking
+        }
+
         if (!isCameraAllowed(context)) {
             mErrorListener?.noCameraPermission()
             return@runBlocking
         }
 
         try {
-            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val cameraList = cameraManager.cameraIdList
-            if (cameraList.isEmpty()) {
-                mErrorListener?.noCamera()
-                return@runBlocking
-            }
+            val cameraPair = getBackCamera()
 
-            var targetCameraId = ""
-            for (cameraId in cameraList) {
-                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
-                    targetCameraId = cameraId
-                    mCharacteristics = characteristics
-                    break
-                }
-            }
-
-            if ("" == targetCameraId && mCharacteristics == null) {
+            if (cameraPair.first == "" && cameraPair.second == null) {
                 mErrorListener?.noBackCamera()
                 return@runBlocking
             }
 
-            mIsFlashAvailable =
-                mCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) as Boolean
-            if (!mIsFlashAvailable) {
-                mErrorListener?.noFlashAvailable()
+            mCharacteristics = cameraPair.second
+            checkFlash()
+            initPreviewSize()
+            if (!mRemeasured) {
+                mRemeasured = true
+                resetLayoutParam()
+                post { initTextureView() }
+                return@runBlocking
             }
-
-            mCameraDevice = openCamera(cameraManager, targetCameraId, mCameraHandler)
-            initPreview()
+            mCameraDevice = openCamera(cameraPair.first, mCameraHandler)
             mCameraSession = createCaptureSession(mCameraDevice!!, getTargetList(), mCameraHandler)
             initCaptureRequest()
             mCameraSession!!.setRepeatingRequest(mRequestBuilder!!.build(), null, mCameraHandler)
@@ -191,13 +189,42 @@ open class ScanCodeView : TextureView, ScanManager {
         }
     }
 
+    private fun getBackCamera(): Pair<String, CameraCharacteristics?> {
+        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraList = cameraManager.cameraIdList
+        if (cameraList.isEmpty()) {
+            mErrorListener?.noCamera()
+            return Pair("", null)
+        }
+
+        var targetCameraId = ""
+        var targetCharacteristic: CameraCharacteristics? = null
+        for (cameraId in cameraList) {
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            if (characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                targetCameraId = cameraId
+                targetCharacteristic = characteristics
+                break
+            }
+        }
+
+        return Pair(targetCameraId, targetCharacteristic)
+    }
+
+    private fun checkFlash() {
+        mIsFlashAvailable =
+            mCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) as Boolean
+        if (!mIsFlashAvailable) {
+            mErrorListener?.noFlashAvailable()
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private suspend fun openCamera(
-        manager: CameraManager,
         cameraId: String,
         handler: Handler
     ): CameraDevice = suspendCancellableCoroutine { cont ->
-        manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+        mCameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 cont.resume(camera)
             }
@@ -223,13 +250,13 @@ open class ScanCodeView : TextureView, ScanManager {
         }, handler)
     }
 
-    private fun initPreview() {
-        mSize = getBestSize()
+    private fun initPreviewSize() {
+        mPreviewSize = getBestSize()
         initImageReader()
     }
 
     open fun getBestSize(): Size {
-        if (mCameraDevice != null && mCharacteristics != null) {
+        if (mCharacteristics != null) {
             val map =
                 mCharacteristics!!.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
             val sizeList = map.getOutputSizes(SurfaceTexture::class.java)
@@ -239,32 +266,32 @@ open class ScanCodeView : TextureView, ScanManager {
                     "there is no support size for SurfaceTexture"
                 )
             } else {
-                val maxWidth = Math.max(width, height)
+                val viewSize = getViewSize()
+                val viewRadio = viewSize.width / (viewSize.height + 0F)
+                var radioDelta = -1000F
+                var targetSize = Size(0, 0)
 
                 for (size in sizeList) {
-                    if (size.width >= maxWidth * 0.8 && size.width <= maxWidth * 1.2) {
-                        return size
+                    val currentRadio = size.width / (size.height + 0F)
+                    val currentRadioDelta = currentRadio - viewRadio
+                    if (radioDelta == -1000F) {
+                        targetSize = size
+                    } else {
+                        if (currentRadioDelta <= radioDelta
+                            && size.width * size.height <= targetSize.width * targetSize.height
+                            && size.width >= viewSize.width * 0.8
+                        ) {
+                            targetSize = size
+                        }
                     }
+                    radioDelta = currentRadioDelta
                 }
 
-                val p1080 = Size(1920, 1080)
-                val p768 = Size(1366, 768)
-                val p720 = Size(1280, 720)
-                val p480 = Size(704, 480)
-                return when {
-                    sizeList.contains(p1080) -> {
-                        p1080
-                    }
-                    sizeList.contains(p768) -> {
-                        p768
-                    }
-                    sizeList.contains(p720) -> {
-                        p720
-                    }
-                    else -> {
-                        p480
-                    }
-                }
+                Log.e(
+                    TAG,
+                    "preview width: ${targetSize.width} preview height: ${targetSize.height}"
+                )
+                return targetSize
             }
 
         } else {
@@ -277,10 +304,21 @@ open class ScanCodeView : TextureView, ScanManager {
 
     private fun initImageReader() {
         mImageReader = ImageReader.newInstance(
-            mSize!!.width, mSize!!.height,
+            mPreviewSize!!.width, mPreviewSize!!.height,
             ImageFormat.YUV_420_888, 3
         )
         mImageReader!!.setOnImageAvailableListener(mImageListener, mImageHandler)
+    }
+
+    private fun resetLayoutParam() {
+        val params = layoutParams ?: ViewGroup.LayoutParams(0, 0)
+        if (measuredWidth < measuredHeight) {
+            params.height = measuredWidth * mPreviewSize!!.width / mPreviewSize!!.height
+        } else {
+            params.height = measuredWidth * mPreviewSize!!.height / mPreviewSize!!.width
+        }
+
+        layoutParams = params
     }
 
     private suspend fun createCaptureSession(
@@ -313,6 +351,24 @@ open class ScanCodeView : TextureView, ScanManager {
             CaptureRequest.CONTROL_AF_MODE,
             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
         )
+
+        val activeRect =
+            mCharacteristics!!.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)!!
+        val centerPoint = Point(
+            (activeRect.left + activeRect.right) / 2,
+            (activeRect.top + activeRect.bottom) / 2
+        )
+        val viewSize = getViewSize()
+        val halfCropWidth = viewSize.width / 2
+        val halfCropHeight = viewSize.height / 2
+        val cropRect = Rect(
+            centerPoint.x - halfCropWidth,
+            centerPoint.y - halfCropHeight,
+            centerPoint.x + halfCropWidth,
+            centerPoint.y + halfCropHeight
+        )
+
+        mRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
     }
 
     private fun getTargetList() = arrayListOf(Surface(surfaceTexture), mImageReader!!.surface)
@@ -323,8 +379,6 @@ open class ScanCodeView : TextureView, ScanManager {
             mCameraSession = null
             mCameraDevice!!.close()
             mCameraDevice = null
-            mCharacteristics = null
-            mSize = null
         }
     }
 
@@ -352,7 +406,7 @@ open class ScanCodeView : TextureView, ScanManager {
     }
 
     override fun isInitDone(): Boolean {
-        return mCameraDevice != null && mCharacteristics != null && mSize != null && mCameraSession != null
+        return mCameraDevice != null && mCharacteristics != null && mPreviewSize != null && mCameraSession != null
     }
 
     override fun setContinue(continueScan: Boolean) {
@@ -365,5 +419,12 @@ open class ScanCodeView : TextureView, ScanManager {
 
     override fun setCameraErrorListener(listener: CameraErrorListener) {
         mErrorListener = listener
+    }
+
+    private fun getViewSize(): Size {
+        val finalWidth = Math.max(width, height)
+        val finalHeight = Math.min(width, height)
+
+        return Size(finalWidth, finalHeight)
     }
 }
