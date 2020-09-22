@@ -312,10 +312,11 @@ open class ScanCodeView : TextureView, ScanManager {
 
     private fun resetLayoutParam() {
         val params = layoutParams ?: ViewGroup.LayoutParams(0, 0)
+        val maxSize = getMaxPreviewRect()
         if (measuredWidth < measuredHeight) {
-            params.height = measuredWidth * mPreviewSize!!.width / mPreviewSize!!.height
+            params.height = measuredWidth * maxSize.width() / maxSize.height()
         } else {
-            params.height = measuredWidth * mPreviewSize!!.height / mPreviewSize!!.width
+            params.height = measuredWidth * maxSize.height() / maxSize.width()
         }
 
         layoutParams = params
@@ -352,23 +353,23 @@ open class ScanCodeView : TextureView, ScanManager {
             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
         )
 
-        val activeRect =
-            mCharacteristics!!.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)!!
-        val centerPoint = Point(
-            (activeRect.left + activeRect.right) / 2,
-            (activeRect.top + activeRect.bottom) / 2
-        )
-        val viewSize = getViewSize()
-        val halfCropWidth = viewSize.width / 2
-        val halfCropHeight = viewSize.height / 2
-        val cropRect = Rect(
-            centerPoint.x - halfCropWidth,
-            centerPoint.y - halfCropHeight,
-            centerPoint.x + halfCropWidth,
-            centerPoint.y + halfCropHeight
-        )
-
-        mRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
+//        val activeRect =
+//            mCharacteristics!!.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)!!
+//        val centerPoint = Point(
+//            (activeRect.left + activeRect.right) / 2,
+//            (activeRect.top + activeRect.bottom) / 2
+//        )
+//        val viewSize = getViewSize()
+//        val halfCropWidth = viewSize.width / 2
+//        val halfCropHeight = viewSize.height / 2
+//        val cropRect = Rect(
+//            centerPoint.x - halfCropWidth,
+//            centerPoint.y - halfCropHeight,
+//            centerPoint.x + halfCropWidth,
+//            centerPoint.y + halfCropHeight
+//        )
+//
+//        mRequestBuilder!!.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
     }
 
     private fun getTargetList() = arrayListOf(Surface(surfaceTexture), mImageReader!!.surface)
@@ -426,5 +427,9 @@ open class ScanCodeView : TextureView, ScanManager {
         val finalHeight = Math.min(width, height)
 
         return Size(finalWidth, finalHeight)
+    }
+
+    private fun getMaxPreviewRect():Rect{
+        return mCharacteristics!!.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)!!
     }
 }
