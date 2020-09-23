@@ -38,7 +38,6 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     private var displayId: Int = -1
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
     private var preview: Preview? = null
-    private var imageCapture: ImageCapture? = null
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -116,7 +115,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     ) : super(context, attributeSet, defStyleAttr, defStyleRes)
 
     @SuppressLint("UnsafeExperimentalUsageError")
-    fun setupCamera(flash: Boolean = false) {
+    fun setupCamera() {
         if (lifecycleOwner == null) {
             throw RuntimeException(" Missing lifecycleOwner ")
         }
@@ -144,13 +143,6 @@ open class ScanCodeViewX : PreviewView, ScanManager {
                     .setTargetRotation(rotation)
                     .build()
 
-                imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .setTargetAspectRatio(aspectRatio)
-                    .setTargetRotation(rotation)
-                    .setFlashMode(if (flash) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
-                    .build()
-
                 imageAnalyzer = ImageAnalysis.Builder()
                     .setTargetResolution(Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -166,7 +158,6 @@ open class ScanCodeViewX : PreviewView, ScanManager {
                         lifecycleOwner!!,
                         cameraSelector,
                         preview,
-                        imageCapture,
                         imageAnalyzer
                     )
 
