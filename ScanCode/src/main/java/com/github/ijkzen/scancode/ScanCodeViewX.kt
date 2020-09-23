@@ -6,11 +6,16 @@ import android.hardware.display.DisplayManager
 import android.util.AttributeSet
 import android.util.Log
 import android.util.Size
+import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.widget.FrameLayout
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
+import androidx.core.view.get
 import androidx.lifecycle.LifecycleOwner
 import com.github.ijkzen.scancode.listener.ScanResultListener
 import com.github.ijkzen.scancode.util.*
@@ -21,19 +26,21 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.multi.GenericMultipleBarcodeReader
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
-open class ScanCodeViewX : PreviewView, ScanManager {
+open class ScanCodeViewX : FrameLayout, ScanManager {
 
     companion object {
-        const val TAG = "ScanCodeViewX"
+        private const val TAG = "ScanCodeViewX"
         private const val RATIO_4_3_VALUE = 4.0 / 3.0
         private const val RATIO_16_9_VALUE = 16.0 / 9.0
     }
 
     @Volatile
     private var mContinue = true
+
+    private lateinit var previewView: PreviewView
+    private lateinit var focusView: FocusView
 
     private var displayId: Int = -1
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
@@ -43,8 +50,10 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     private var cameraProvider: ProcessCameraProvider? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var scanResultListener: ScanResultListener? = null
-    private val mCodeReader = GenericMultipleBarcodeReader(MultiFormatReader())
+    private val codeReader = GenericMultipleBarcodeReader(MultiFormatReader())
     private lateinit var mApplicationContext: Context
+
+    private var showFocusCircle = false
 
     private val displayManager by lazy {
         context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -85,7 +94,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
 
         val bitmap = BinaryBitmap(HybridBinarizer(source))
         try {
-            val resultList = mCodeReader.decodeMultiple(bitmap)
+            val resultList = codeReader.decodeMultiple(bitmap)
             if (resultList != null && resultList.isNotEmpty()) {
                 mContinue = false
                 post { scanResultListener?.onScanResult(resultList.map { it.text }) }
@@ -97,25 +106,36 @@ open class ScanCodeViewX : PreviewView, ScanManager {
         proxy.close()
     }
 
-    constructor(context: Context) : super(context)
+    constructor(context: Context) : super(context) {
+        initView()
+    }
 
-    constructor(context: Context, attributeSet: AttributeSet) : super(context, attributeSet)
+    constructor(context: Context, attributeSet: AttributeSet) : super(context, attributeSet) {
+        initView()
+    }
 
-    constructor(context: Context, attributeSet: AttributeSet, defStyleAttr: Int) : super(
-        context,
-        attributeSet,
-        defStyleAttr
-    )
+    constructor(context: Context, attributeSet: AttributeSet, defStyleAttr: Int)
+            : super(context, attributeSet, defStyleAttr) {
+        initView()
+    }
 
     constructor(
         context: Context,
         attributeSet: AttributeSet,
         defStyleAttr: Int,
         defStyleRes: Int
-    ) : super(context, attributeSet, defStyleAttr, defStyleRes)
+    ) : super(context, attributeSet, defStyleAttr, defStyleRes) {
+        initView()
+    }
+
+    private fun initView() {
+        LayoutInflater.from(context).inflate(R.layout.layout_scan_code_view, this, true)
+        previewView = findViewById(R.id.preview)
+        focusView = findViewById(R.id.focus)
+    }
 
     @SuppressLint("UnsafeExperimentalUsageError")
-    fun setupCamera() {
+    private fun setupCamera() {
         if (lifecycleOwner == null) {
             throw RuntimeException(" Missing lifecycleOwner ")
         }
@@ -124,6 +144,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
             cameraExecutor = Executors.newSingleThreadExecutor()
         }
         displayManager.registerDisplayListener(displayListener, null)
+        previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         post {
             displayId = display.displayId
             val providerFuture = ProcessCameraProvider.getInstance(mApplicationContext)
@@ -161,7 +182,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
                         imageAnalyzer
                     )
 
-                    preview?.setSurfaceProvider(surfaceProvider)
+                    preview?.setSurfaceProvider(previewView.surfaceProvider)
 
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -217,6 +238,10 @@ open class ScanCodeViewX : PreviewView, ScanManager {
         scanResultListener = listener
     }
 
+    override fun setShowFocusCircle(show: Boolean) {
+        showFocusCircle = show
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         return when (event.action) {
@@ -228,6 +253,29 @@ open class ScanCodeViewX : PreviewView, ScanManager {
                     SurfaceOrientedMeteringPointFactory(width.toFloat(), height.toFloat())
                 val autoFocusPoint =
                     factory.createPoint(event.x, event.y)
+
+                if (showFocusCircle) {
+                    val constraintSet = ConstraintSet()
+                    constraintSet.clone(getChildConstraintLayout())
+                    constraintSet.connect(
+                        R.id.focus,
+                        ConstraintSet.TOP,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.TOP,
+                        event.y.toInt() - focusView.height / 2
+                    )
+
+                    constraintSet.connect(
+                        R.id.focus,
+                        ConstraintSet.START,
+                        ConstraintSet.PARENT_ID,
+                        ConstraintSet.START,
+                        event.x.toInt() - focusView.width / 2
+                    )
+
+                    constraintSet.applyTo(getChildConstraintLayout())
+                    focusView.startAnimation()
+                }
 
                 try {
                     camera?.cameraControl?.startFocusAndMetering(
@@ -246,5 +294,5 @@ open class ScanCodeViewX : PreviewView, ScanManager {
         }
     }
 
-    
+    private fun getChildConstraintLayout() = get(0) as ConstraintLayout
 }

@@ -15,4 +15,6 @@ interface ScanManager {
     fun setContinue(continueScan: Boolean)
 
     fun setResultListener(listener: ScanResultListener)
+
+    fun setShowFocusCircle(show: Boolean)
 }

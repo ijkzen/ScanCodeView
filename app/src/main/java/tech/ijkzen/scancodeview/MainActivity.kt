@@ -24,7 +24,8 @@ class MainActivity : AppCompatActivity() {
 
         codeView = findViewById<ScanCodeViewX>(R.id.scan_code)
         codeView.setLifecycle(this, this)
-        codeView.setupCamera()
+        codeView.initCamera()
+        codeView.setShowFocusCircle(true)
         val result = findViewById<AppCompatTextView>(R.id.result)
         codeView.setResultListener(object : ScanResultListener {
             override fun onScanResult(resultList: List<String>) {
@@ -33,14 +34,17 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        val flashText = findViewById<AppCompatTextView>(R.id.flash_text)
         findViewById<AppCompatImageView>(R.id.flash_img)
             .setOnClickListener {
                 if (isOpenFlash) {
                     isOpenFlash = false
                     codeView.closeFlash()
+                    flashText.text = "Turn On"
                 } else {
                     isOpenFlash = true
                     codeView.openFlash()
+                    flashText.text = "Turn Off"
                 }
             }
 
