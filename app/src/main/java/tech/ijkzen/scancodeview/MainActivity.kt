@@ -9,20 +9,22 @@ import android.view.View
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.content.ContextCompat
-import com.github.ijkzen.scancode.ScanCodeView
+import com.github.ijkzen.scancode.ScanCodeViewX
 import com.github.ijkzen.scancode.listener.ScanResultListener
 
 class MainActivity : AppCompatActivity() {
 
     private var isOpenFlash = false
 
-    private lateinit var codeView: ScanCodeView
+    private lateinit var codeView: ScanCodeViewX
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        codeView = findViewById<ScanCodeView>(R.id.scan_code)
+        codeView = findViewById<ScanCodeViewX>(R.id.scan_code)
+        codeView.setLifecycle(this, this)
+        codeView.setupCamera()
         val result = findViewById<AppCompatTextView>(R.id.result)
         codeView.setResultListener(object : ScanResultListener {
             override fun onScanResult(resultList: List<String>) {
@@ -75,16 +77,5 @@ class MainActivity : AppCompatActivity() {
             .or(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
             .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
         window.statusBarColor = Color.TRANSPARENT
-        codeView.initCamera()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        codeView.releaseCamera()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        codeView.destroyCamera()
     }
 }
