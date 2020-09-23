@@ -6,6 +6,7 @@ import android.hardware.display.DisplayManager
 import android.util.AttributeSet
 import android.util.Log
 import android.util.Size
+import android.view.MotionEvent
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -20,6 +21,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.multi.GenericMultipleBarcodeReader
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 open class ScanCodeViewX : PreviewView, ScanManager {
@@ -33,7 +35,6 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     @Volatile
     private var mContinue = true
 
-    private var frameCount: Long = 0
     private var displayId: Int = -1
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
     private var preview: Preview? = null
@@ -63,7 +64,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     }
 
     private val scanWorker = ImageAnalysis.Analyzer { proxy ->
-        if (!mContinue || scanResultListener == null || frameCount++ % 5 != 0L) {
+        if (!mContinue || scanResultListener == null) {
             proxy.close()
             return@Analyzer
         }
@@ -161,6 +162,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
                     )
 
                     preview?.setSurfaceProvider(surfaceProvider)
+
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -192,6 +194,13 @@ open class ScanCodeViewX : PreviewView, ScanManager {
         }
     }
 
+    override fun releaseCamera() {
+        displayManager.unregisterDisplayListener(displayListener)
+        cameraExecutor?.shutdown()
+        nv21 = null
+        rotatedNv21 = null
+    }
+
     override fun openFlash() {
         camera?.cameraControl?.enableTorch(true)
     }
@@ -207,4 +216,35 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     override fun setResultListener(listener: ScanResultListener) {
         scanResultListener = listener
     }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        return when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                true
+            }
+            MotionEvent.ACTION_UP -> {
+                val factory =
+                    SurfaceOrientedMeteringPointFactory(width.toFloat(), height.toFloat())
+                val autoFocusPoint =
+                    factory.createPoint(event.x, event.y)
+
+                try {
+                    camera?.cameraControl?.startFocusAndMetering(
+                        FocusMeteringAction.Builder(autoFocusPoint, FocusMeteringAction.FLAG_AF)
+                            .apply { disableAutoCancel() }
+                            .build())
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                return true
+            }
+            else -> {
+                false
+            }
+        }
+    }
+
+    
 }

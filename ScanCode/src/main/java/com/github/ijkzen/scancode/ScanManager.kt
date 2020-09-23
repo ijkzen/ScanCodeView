@@ -6,6 +6,8 @@ interface ScanManager {
 
     fun initCamera()
 
+    fun releaseCamera()
+
     fun openFlash()
 
     fun closeFlash()
