@@ -68,13 +68,18 @@ fun yuv888ToNv21(image: Image): ByteArray {
     return data
 }
 
+var nv21: ByteArray? = null
+
 fun yuv888ToNv21(image: ImageProxy): ByteArray {
     val crop: Rect = image.cropRect
     val format: Int = image.format
     val width: Int = crop.width()
     val height: Int = crop.height()
     val planes: Array<ImageProxy.PlaneProxy> = image.planes
-    val data = ByteArray(width * height * ImageFormat.getBitsPerPixel(format) / 8)
+    val dataSize = width * height * ImageFormat.getBitsPerPixel(format) / 8
+    if (nv21 == null || nv21?.size != dataSize) {
+        nv21 = ByteArray(dataSize)
+    }
     val rowData = ByteArray(planes[0].rowStride)
     var channelOffset = 0
     var outputStride = 1
@@ -105,13 +110,13 @@ fun yuv888ToNv21(image: ImageProxy): ByteArray {
             var length: Int
             if (pixelStride == 1 && outputStride == 1) {
                 length = w
-                buffer.get(data, channelOffset, length)
+                buffer.get(nv21!!, channelOffset, length)
                 channelOffset += length
             } else {
                 length = (w - 1) * pixelStride + 1
                 buffer.get(rowData, 0, length)
                 for (col in 0 until w) {
-                    data[channelOffset] = rowData[col * pixelStride]
+                    nv21!![channelOffset] = rowData[col * pixelStride]
                     channelOffset += outputStride
                 }
             }
@@ -120,21 +125,25 @@ fun yuv888ToNv21(image: ImageProxy): ByteArray {
             }
         }
     }
-    return data
+    return nv21!!
 }
 
 
+var rotatedNv21: ByteArray? = null
+
 // rotate 90 degree for nv21 image
-fun rotate90ForNv21(nv21_data: ByteArray, width: Int, height: Int): ByteArray? {
+fun rotate90ForNv21(nv21: ByteArray, width: Int, height: Int): ByteArray{
     val ySize = width * height
     val bufferSize = ySize * 3 / 2
-    val rotatedNv21 = ByteArray(bufferSize)
+    if (rotatedNv21 == null || rotatedNv21?.size != bufferSize) {
+        rotatedNv21 = ByteArray(bufferSize)
+    }
     var i = 0
     val startPos = (height - 1) * width
     for (x in 0 until width) {
         var offset = startPos
         for (y in height - 1 downTo 0) {
-            rotatedNv21[i] = nv21_data[offset + x]
+            rotatedNv21!![i] = nv21[offset + x]
             i++
             offset -= width
         }
@@ -145,15 +154,15 @@ fun rotate90ForNv21(nv21_data: ByteArray, width: Int, height: Int): ByteArray? {
     while (x > 0) {
         var offset = ySize
         for (y in 0 until height / 2) {
-            rotatedNv21[i] = nv21_data[offset + x]
+            rotatedNv21!![i] = nv21[offset + x]
             i--
-            rotatedNv21[i] = nv21_data[offset + (x - 1)]
+            rotatedNv21!![i] = nv21[offset + (x - 1)]
             i--
             offset += width
         }
         x -= 2
     }
-    return rotatedNv21
+    return rotatedNv21!!
 }
 
 fun NV21toJPEG(nv21: ByteArray?, width: Int, height: Int): ByteArray? {

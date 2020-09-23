@@ -12,9 +12,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.github.ijkzen.scancode.listener.ScanResultListener
-import com.github.ijkzen.scancode.util.isCameraAllowed
-import com.github.ijkzen.scancode.util.rotate90ForNv21
-import com.github.ijkzen.scancode.util.yuv888ToNv21
+import com.github.ijkzen.scancode.util.*
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
@@ -35,6 +33,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     @Volatile
     private var mContinue = true
 
+    private var frameCount: Long = 0
     private var displayId: Int = -1
     private var lensFacing: Int = CameraSelector.LENS_FACING_BACK
     private var preview: Preview? = null
@@ -64,7 +63,7 @@ open class ScanCodeViewX : PreviewView, ScanManager {
     }
 
     private val scanWorker = ImageAnalysis.Analyzer { proxy ->
-        if (!mContinue || scanResultListener == null) {
+        if (!mContinue || scanResultListener == null || frameCount++ % 5 != 0L) {
             proxy.close()
             return@Analyzer
         }
