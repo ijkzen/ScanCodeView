@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <com.github.ijkzen.scancode.ScanCodeView
+    <com.github.ijkzen.scancode.ScanCodeViewX
         android:id="@+id/scan_code"
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -29,7 +29,7 @@
     <LinearLayout
         android:id="@+id/operation_layout"
         android:layout_width="0dp"
-        android:layout_height="0dp"
+        android:layout_height="80dp"
         android:background="@android:color/black"
         android:gravity="center"
         android:orientation="vertical"
