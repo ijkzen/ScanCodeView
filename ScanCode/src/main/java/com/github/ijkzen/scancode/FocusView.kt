@@ -40,6 +40,7 @@ class FocusView : View {
         isAntiAlias = true
         color = Color.WHITE
         style = Paint.Style.STROKE
+        strokeWidth = 2F
     }
 
     private var center: Float = 0F
