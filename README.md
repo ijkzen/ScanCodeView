@@ -39,7 +39,7 @@ allprojects {
 ```groovy
 dependencies {
     ...
-    def camerax_version = '1.0.0-beta09'
+    def camerax_version = '1.0.0-beta10'
     implementation "androidx.camera:camera-core:$camerax_version"
 
     // CameraX Camera2 extensions
@@ -49,7 +49,7 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:$camerax_version"
 
     // CameraX View class
-    implementation 'androidx.camera:camera-view:1.0.0-alpha16'
+    implementation 'androidx.camera:camera-view:1.0.0-alpha17'
     
     implementation 'com.github.ijkzen:ScanCodeView:<latest_version>'
 }
