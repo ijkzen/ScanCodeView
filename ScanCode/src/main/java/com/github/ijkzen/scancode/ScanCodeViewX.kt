@@ -18,9 +18,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.get
 import androidx.lifecycle.LifecycleOwner
 import com.github.ijkzen.scancode.listener.ScanResultListener
-import com.github.ijkzen.scancode.util.isCameraAllowed
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
+import com.github.ijkzen.scancode.util.*
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.multi.GenericMultipleBarcodeReader
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -47,6 +50,7 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     private var cameraProvider: ProcessCameraProvider? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var scanResultListener: ScanResultListener? = null
+    private val codeReader = GenericMultipleBarcodeReader(MultiFormatReader())
     private lateinit var mApplicationContext: Context
 
     private var showFocusCircle = false
@@ -68,28 +72,38 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
         }
     }
 
-    @SuppressLint("UnsafeExperimentalUsageError")
     private val scanWorker = ImageAnalysis.Analyzer { proxy ->
-        if (!mContinue || scanResultListener == null || proxy.image == null) {
+        if (!mContinue || scanResultListener == null) {
             proxy.close()
             return@Analyzer
         }
-        val image = InputImage.fromMediaImage(proxy.image!!, proxy.imageInfo.rotationDegrees)
-        val scanner = BarcodeScanning.getClient()
-        scanner.process(image)
-            .addOnSuccessListener { codes ->
-                if (codes.isNotEmpty()) {
-                    post {
-                        scanResultListener?.onScanResult(
-                            codes.map { it.rawValue ?: "" }
-                        )
-                    }
-                }
-            }.addOnFailureListener { e ->
-                e.printStackTrace()
-            }.addOnCompleteListener {
-                proxy.close()
+        val nv21 = yuv888ToNv21(proxy)
+        val data = rotate90ForNv21(nv21, proxy.width, proxy.height)
+//                    val jpg = NV21toJPEG(data, proxy.height, proxy.width)
+//                    saveJpeg2File(jpg, context)
+        val source = PlanarYUVLuminanceSource(
+            data,
+            proxy.height,
+            proxy.width,
+            0,
+            0,
+            proxy.height,
+            proxy.width,
+            false
+        )
+
+        val bitmap = BinaryBitmap(HybridBinarizer(source))
+        try {
+            val resultList = codeReader.decodeMultiple(bitmap)
+            if (resultList != null && resultList.isNotEmpty()) {
+                mContinue = false
+                post { scanResultListener?.onScanResult(resultList.map { it.text }) }
+            } else {
+                mContinue = true
             }
+        } catch (e: Exception) {
+        }
+        proxy.close()
     }
 
     constructor(context: Context) : super(context) {
@@ -204,6 +218,8 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     override fun releaseCamera() {
         displayManager.unregisterDisplayListener(displayListener)
         cameraExecutor?.shutdown()
+        nv21 = null
+        rotatedNv21 = null
     }
 
     override fun openFlash() {
