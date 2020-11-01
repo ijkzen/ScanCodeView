@@ -3,6 +3,7 @@ package com.github.ijkzen.scancode
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.provider.Settings
 import android.util.AttributeSet
 import android.util.Log
 import android.util.Size
@@ -54,6 +55,8 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     private lateinit var mApplicationContext: Context
 
     private var showFocusCircle = false
+
+    private var mTouchDownTime: Long = 0L
 
     private val displayManager by lazy {
         context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -246,9 +249,14 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         return when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                mTouchDownTime = System.currentTimeMillis()
                 true
             }
             MotionEvent.ACTION_UP -> {
+                if (System.currentTimeMillis() - mTouchDownTime > 64) {
+                    return true
+                }
+
                 val factory =
                     SurfaceOrientedMeteringPointFactory(width.toFloat(), height.toFloat())
                 val autoFocusPoint =
