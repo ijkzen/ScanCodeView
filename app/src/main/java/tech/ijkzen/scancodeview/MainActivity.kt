@@ -9,6 +9,8 @@ import android.view.View
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.github.ijkzen.scancode.ScanCodeViewX
 import com.github.ijkzen.scancode.listener.ScanResultListener
 
@@ -18,6 +20,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var codeView: ScanCodeViewX
 
+    private val mAdapter = ResultAdapter()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -26,10 +30,13 @@ class MainActivity : AppCompatActivity() {
         codeView.setLifecycle(this, this)
         codeView.initCamera()
         codeView.setShowFocusCircle(true)
-        val result = findViewById<AppCompatTextView>(R.id.result)
+        val result = findViewById<RecyclerView>(R.id.result)
+        result.layoutManager = LinearLayoutManager(this)
+        result.adapter = mAdapter
+
         codeView.setResultListener(object : ScanResultListener {
             override fun onScanResult(resultList: List<String>) {
-                result.text = resultList[0]
+                mAdapter.setList(resultList)
                 codeView.setContinue(true)
             }
         })

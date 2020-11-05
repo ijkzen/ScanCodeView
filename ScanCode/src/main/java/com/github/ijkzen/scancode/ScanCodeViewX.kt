@@ -3,12 +3,12 @@ package com.github.ijkzen.scancode
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.display.DisplayManager
-import android.provider.Settings
 import android.util.AttributeSet
 import android.util.Log
 import android.util.Size
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -20,9 +20,7 @@ import androidx.core.view.get
 import androidx.lifecycle.LifecycleOwner
 import com.github.ijkzen.scancode.listener.ScanResultListener
 import com.github.ijkzen.scancode.util.*
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.multi.GenericMultipleBarcodeReader
 import java.util.concurrent.ExecutorService
@@ -51,7 +49,15 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     private var cameraProvider: ProcessCameraProvider? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var scanResultListener: ScanResultListener? = null
-    private val codeReader = GenericMultipleBarcodeReader(MultiFormatReader())
+    private val codeReader by lazy {
+        val formatReader = MultiFormatReader()
+        val formats = arrayListOf<BarcodeFormat>(BarcodeFormat.CODE_128, BarcodeFormat.QR_CODE)
+        val hints = HashMap<DecodeHintType, Any>()
+        hints[DecodeHintType.POSSIBLE_FORMATS] = formats
+        hints[DecodeHintType.TRY_HARDER] = false
+        formatReader.setHints(hints)
+        GenericMultipleBarcodeReader(formatReader)
+    }
     private lateinit var mApplicationContext: Context
 
     private var showFocusCircle = false
@@ -253,7 +259,7 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
                 true
             }
             MotionEvent.ACTION_UP -> {
-                if (System.currentTimeMillis() - mTouchDownTime > 64) {
+                if (System.currentTimeMillis() - mTouchDownTime > ViewConfiguration.getTapTimeout()) {
                     return true
                 }
 
