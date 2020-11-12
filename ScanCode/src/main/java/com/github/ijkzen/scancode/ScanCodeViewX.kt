@@ -2,6 +2,7 @@ package com.github.ijkzen.scancode
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.camera2.CameraManager
 import android.hardware.display.DisplayManager
 import android.util.AttributeSet
 import android.util.Log
@@ -10,6 +11,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -54,7 +56,8 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
         val formats = arrayListOf<BarcodeFormat>(BarcodeFormat.CODE_128, BarcodeFormat.QR_CODE)
         val hints = HashMap<DecodeHintType, Any>()
         hints[DecodeHintType.POSSIBLE_FORMATS] = formats
-        hints[DecodeHintType.TRY_HARDER] = false
+        hints[DecodeHintType.TRY_HARDER] = true
+        hints[DecodeHintType.CHARACTER_SET] = "utf-8"
         formatReader.setHints(hints)
         GenericMultipleBarcodeReader(formatReader)
     }
@@ -88,8 +91,7 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
         }
         val nv21 = yuv888ToNv21(proxy)
         val data = rotate90ForNv21(nv21, proxy.width, proxy.height)
-//                    val jpg = NV21toJPEG(data, proxy.height, proxy.width)
-//                    saveJpeg2File(jpg, context)
+
         val source = PlanarYUVLuminanceSource(
             data,
             proxy.height,
@@ -168,22 +170,29 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
                 val cameraProvider =
                     cameraProvider ?: throw IllegalStateException("Camera initialization failed")
                 val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
-                preview = Preview.Builder()
-                    .setTargetAspectRatio(aspectRatio)
-                    .setTargetRotation(rotation)
-                    .build()
-
-                imageAnalyzer = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(1280, 720))
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setTargetRotation(rotation)
-                    .build()
-
-                imageAnalyzer!!.setAnalyzer(cameraExecutor!!, scanWorker)
-
-                cameraProvider.unbindAll()
 
                 try {
+
+                    cameraProvider.unbindAll()
+
+                    preview = Preview.Builder()
+                        .setTargetAspectRatio(aspectRatio)
+                        .setTargetRotation(rotation)
+                        .build()
+
+                    camera =
+                        cameraProvider.bindToLifecycle(lifecycleOwner!!, cameraSelector, preview)
+
+
+
+                    imageAnalyzer = ImageAnalysis.Builder()
+                        .setTargetResolution(Size(1280, 720))
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setTargetRotation(rotation)
+                        .build()
+
+                    imageAnalyzer!!.setAnalyzer(cameraExecutor!!, scanWorker)
+
                     camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner!!,
                         cameraSelector,
@@ -309,4 +318,11 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
     }
 
     private fun getChildConstraintLayout() = get(0) as ConstraintLayout
+
+//    private fun getBestAnalyzeSize(): Size {
+//        if (camera != null) {
+//            val cameraManager = mApplicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+//            val character = cameraManager.getCameraCharacteristics(Camera2CameraInfo.fromCameraInfo(camera?.cameraInfo).cameraId)
+//        }
+//    }
 }
