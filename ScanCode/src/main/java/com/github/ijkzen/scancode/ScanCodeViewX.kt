@@ -2,7 +2,10 @@ package com.github.ijkzen.scancode
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.StreamConfigurationMap
 import android.hardware.display.DisplayManager
 import android.util.AttributeSet
 import android.util.Log
@@ -11,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -35,6 +39,7 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
         private const val TAG = "ScanCodeViewX"
         private const val RATIO_4_3_VALUE = 4.0 / 3.0
         private const val RATIO_16_9_VALUE = 16.0 / 9.0
+        private val DEFAULT_SIZE = Size(1280, 720)
     }
 
     @Volatile
@@ -89,6 +94,8 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
             proxy.close()
             return@Analyzer
         }
+
+        Log.e("test", "image width: ${proxy.width} image height: ${proxy.height}")
         val nv21 = yuv888ToNv21(proxy)
         val data = rotate90ForNv21(nv21, proxy.width, proxy.height)
 
@@ -172,7 +179,6 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
                 val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
                 try {
-
                     cameraProvider.unbindAll()
 
                     preview = Preview.Builder()
@@ -183,10 +189,10 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
                     camera =
                         cameraProvider.bindToLifecycle(lifecycleOwner!!, cameraSelector, preview)
 
-
+                    preview?.setSurfaceProvider(previewView.surfaceProvider)
 
                     imageAnalyzer = ImageAnalysis.Builder()
-                        .setTargetResolution(Size(1280, 720))
+                        .setTargetResolution(getBestAnalyzeSize())
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setTargetRotation(rotation)
                         .build()
@@ -196,11 +202,8 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
                     camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner!!,
                         cameraSelector,
-                        preview,
                         imageAnalyzer
                     )
-
-                    preview?.setSurfaceProvider(previewView.surfaceProvider)
 
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -319,10 +322,51 @@ open class ScanCodeViewX : FrameLayout, ScanManager {
 
     private fun getChildConstraintLayout() = get(0) as ConstraintLayout
 
-//    private fun getBestAnalyzeSize(): Size {
-//        if (camera != null) {
-//            val cameraManager = mApplicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-//            val character = cameraManager.getCameraCharacteristics(Camera2CameraInfo.fromCameraInfo(camera?.cameraInfo).cameraId)
-//        }
-//    }
+    private fun getBestAnalyzeSize(): Size {
+        if (camera != null) {
+            val cameraManager =
+                mApplicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+            val info = getCameraInfo()
+
+            if (info != null) {
+                val clz = Camera2CameraInfoImpl::class.java
+                val cameraIdField = clz.getDeclaredField("mCameraId")
+                cameraIdField.isAccessible = true
+                val cameraId = cameraIdField.get(info)
+
+                val character =
+                    cameraManager.getCameraCharacteristics(cameraId as String)
+
+                val map: StreamConfigurationMap =
+                    character[CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP] as StreamConfigurationMap
+                val sizeList = map.getOutputSizes(SurfaceTexture::class.java)
+
+                for (size in sizeList) {
+
+                    Log.e("test", size.toString())
+                    if ((size.width == 1920 || size.width == 1080) &&
+                        (size.height == 1920 || size.height == 1080)) {
+
+                        return Size(1920, 1080)
+                    }
+                }
+
+                return sizeList.last()
+
+            } else {
+                return DEFAULT_SIZE
+            }
+        } else {
+            return DEFAULT_SIZE
+        }
+    }
+
+    private fun getCameraInfo(): Camera2CameraInfoImpl? {
+        return if (camera?.cameraInfo is Camera2CameraInfoImpl) {
+            camera?.cameraInfo as Camera2CameraInfoImpl
+        } else {
+            null
+        }
+    }
 }
